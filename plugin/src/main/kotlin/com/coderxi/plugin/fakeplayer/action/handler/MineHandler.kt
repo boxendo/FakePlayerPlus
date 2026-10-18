@@ -5,6 +5,7 @@ import com.coderxi.plugin.fakeplayer.action.base.CommonActionMode
 import com.coderxi.plugin.fakeplayer.action.type.MineAction
 import com.coderxi.plugin.fakeplayer.api.entity.FakePlayer
 import com.coderxi.plugin.fakeplayer.api.nms.NMSServerPlayer.BlockBreakActionType.*
+import org.bukkit.GameMode
 
 object MineHandler : CommonActionHandler<MineAction>(
     type = MineAction::class.java,
@@ -15,15 +16,17 @@ object MineHandler : CommonActionHandler<MineAction>(
     override fun runOnce(fakePlayer: FakePlayer, action: MineAction) {
         throw UnsupportedOperationException()
     }
+
     override fun runIntervalTick(fakePlayer: FakePlayer, action: MineAction) {
         throw UnsupportedOperationException()
     }
 
-    override fun runContinuousTick(fakePlayer: FakePlayer, action: MineAction ) {
+    override fun runContinuousTick(fakePlayer: FakePlayer, action: MineAction) {
         if (action.freezeTick > 0) {
             action.freezeTick--
             return
         }
+
         val player = fakePlayer.player
         val maxDistance = fakePlayer.nms.blockReachDistance
         val target = player.rayTraceBlocks(maxDistance)?.hitBlock
@@ -31,18 +34,33 @@ object MineHandler : CommonActionHandler<MineAction>(
             resetMining(fakePlayer, action)
             return
         }
-        player.swingMainHand()
-        if (action.target == null || action.target != target) {
+
+        if (action.target != target) {
             if (action.target != null) resetMining(fakePlayer, action)
             fakePlayer.nms.doBlockBreakAction(target, START)
             action.target = target
             action.progress = 0f
-        } else {
-            action.progress += fakePlayer.nms.getDestroyProgress(target)
         }
+
+        player.swingMainHand()
+
+        if (player.gameMode == GameMode.CREATIVE) {
+            // START breaks the block immediately in creative.
+            action.target = null
+            action.progress = 0f
+            action.freezeTick = 5
+            fakePlayer.nms.resetLastActionTime()
+            return
+        }
+
+        action.progress += fakePlayer.nms.getDestroyProgress(target)
+        fakePlayer.nms.resetLastActionTime()
+
         if (action.progress >= 1.0f) {
             fakePlayer.nms.doBlockBreakAction(target, STOP)
-            resetMining(fakePlayer, action)
+            // Do not send ABORT after STOP; the block is already gone.
+            action.target = null
+            action.progress = 0f
             action.freezeTick = 5
         }
     }
@@ -52,7 +70,11 @@ object MineHandler : CommonActionHandler<MineAction>(
     }
 
     private fun resetMining(fakePlayer: FakePlayer, action: MineAction) {
-        val target = action.target ?: return
+        val target = action.target
+        if (target == null) {
+            action.progress = 0f
+            return
+        }
         fakePlayer.nms.doBlockBreakAction(target, ABORT)
         action.target = null
         action.progress = 0f

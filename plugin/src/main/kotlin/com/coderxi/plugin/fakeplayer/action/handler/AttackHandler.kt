@@ -4,6 +4,9 @@ import com.coderxi.plugin.fakeplayer.action.base.CommonActionHandler
 import com.coderxi.plugin.fakeplayer.action.base.CommonActionMode
 import com.coderxi.plugin.fakeplayer.action.type.AttackAction
 import com.coderxi.plugin.fakeplayer.api.entity.FakePlayer
+import org.bukkit.FluidCollisionMode
+import org.bukkit.GameMode
+import kotlin.math.ceil
 
 object AttackHandler : CommonActionHandler<AttackAction>(
     type = AttackAction::class.java,
@@ -13,9 +16,29 @@ object AttackHandler : CommonActionHandler<AttackAction>(
 
     override fun runOnce(fakePlayer: FakePlayer, action: AttackAction) {
         val player = fakePlayer.player
-        val target = player.rayTraceEntities(fakePlayer.nms.entityReachDistance.toInt())?.hitEntity
+        val reach = if (player.gameMode == GameMode.CREATIVE) 5.0 else 4.5
+
+        val eye = player.eyeLocation
+        val eyePos = eye.toVector()
+        val direction = eye.direction
+
+        // Blocks first, then entities. Entities behind the block hit are ignored,
+        // matching the upstream Tracer implementation.
+        val blockHit = player.world.rayTraceBlocks(eye, direction, reach, FluidCollisionMode.NEVER, false)
+        val blockDistanceSq = blockHit?.hitPosition?.distanceSquared(eyePos) ?: (reach * reach)
+
+        // getTargetEntity only accepts an int; reject hits outside the real reach below.
+        val entityHit = player.rayTraceEntities(ceil(reach).toInt(), true) ?: return
+        val target = entityHit.hitEntity ?: return
+        val entityDistanceSq = entityHit.hitPosition.distanceSquared(eyePos)
+        if (entityDistanceSq > reach * reach || entityDistanceSq >= blockDistanceSq) {
+            return
+        }
+
+        player.attack(target)
         player.swingMainHand()
-        target?.let { player.attack(it) }
+        runCatching { player.resetCooldown() }
+        fakePlayer.nms.resetLastActionTime()
     }
 
     override fun runIntervalTick(fakePlayer: FakePlayer, action: AttackAction) {

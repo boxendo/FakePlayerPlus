@@ -20,9 +20,15 @@ object UseItemHandler : CommonActionHandler<UseItemAction>(
             action.freezeTick--
             return false
         }
-        val mainHandUsed = fakePlayer.nms.useItem(EquipmentSlot.HAND)
-        val offHandUsed = fakePlayer.nms.useItem(EquipmentSlot.OFF_HAND)
-        return mainHandUsed || offHandUsed
+        if (fakePlayer.nms.useItem(EquipmentSlot.HAND)) {
+            fakePlayer.nms.resetLastActionTime()
+            return true
+        }
+        if (fakePlayer.nms.useItem(EquipmentSlot.OFF_HAND)) {
+            fakePlayer.nms.resetLastActionTime()
+            return true
+        }
+        return false
     }
 
     override fun runOnce(fakePlayer: FakePlayer, action: UseItemAction) {

@@ -7,6 +7,7 @@ import com.coderxi.plugin.fakeplayer.api.entity.FakePlayer
 import com.coderxi.plugin.fakeplayer.utils.messages.sendLocalizedMessage
 import io.papermc.paper.entity.LookAnchor
 import org.bukkit.Bukkit
+import org.bukkit.GameMode
 import org.bukkit.entity.Damageable
 import org.bukkit.entity.Entity
 
@@ -16,9 +17,12 @@ object LookAtEntityHandler: CommonActionHandler<LookAtEntityAction>(
     modes = setOf(CommonActionMode.ONCE, CommonActionMode.CONTINUOUS)
 ) {
     override fun runOnce(fakePlayer: FakePlayer, action: LookAtEntityAction) {
-        val center = fakePlayer.player.location
-        val radius = fakePlayer.nms.entityReachDistance
-        val entities = center.getNearbyEntitiesByType(Damageable::class.java,radius)
+        val player = fakePlayer.player
+        val center = player.location
+        // Keep this in sync with the attack action: a target that is attackable
+        // at 4.5/5.0 blocks must also be "lookable".
+        val radius = if (player.gameMode == GameMode.CREATIVE) 5.0 else 4.5
+        val entities = center.getNearbyEntitiesByType(Damageable::class.java, radius)
         if (entities.size > 150) {
             fakePlayer.actions.stop(action)
             fakePlayer.owners.forEach { Bukkit.getPlayer(it.uuid)?.sendLocalizedMessage("fakeplayer.action.look-at-entity.stop.too-many-entities", it.name, entities.size) }
@@ -27,17 +31,21 @@ object LookAtEntityHandler: CommonActionHandler<LookAtEntityAction>(
         var nearestEntity: Entity? = null
         var nearestEntityDistance = 0.0
         for (entity in entities) {
-            if (entity === fakePlayer.player) {
+            if (entity === player) {
                 continue
             }
             val distance = entity.location.distanceSquared(center)
+            // getNearbyEntitiesByType uses a cube; reject the corners outside reach.
+            if (distance > radius * radius) {
+                continue
+            }
             if (nearestEntity == null || distance < nearestEntityDistance) {
                 nearestEntity = entity
                 nearestEntityDistance = distance
             }
         }
         if (nearestEntity != null) {
-            fakePlayer.player.lookAt(nearestEntity, LookAnchor.EYES,LookAnchor.EYES)
+            player.lookAt(nearestEntity, LookAnchor.EYES, LookAnchor.EYES)
         }
     }
 
